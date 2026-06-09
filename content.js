@@ -298,20 +298,32 @@ function init() {
   chrome.storage.local.set({ aegisStatus: "active", platform });
   console.log("[Aegis AI] Loaded on:", platform);
 
-  const inputEl =
-    document.querySelector("textarea#prompt-textarea") ||
-    document.querySelector("[contenteditable='true']");
+  // Selector priority:
+  //   1. ChatGPT's prompt div  (#prompt-textarea — contenteditable div)
+  //   2. Generic textarea fallback
+  //   3. Any contenteditable with role="textbox" (Claude, Gemini)
+  //   4. Last resort: first contenteditable on page
+  function findInput() {
+    return (
+      document.querySelector("#prompt-textarea") ||
+      document.querySelector("textarea#prompt-textarea") ||
+      document.querySelector("[contenteditable='true'][role='textbox']") ||
+      document.querySelector("[contenteditable='true']")
+    );
+  }
+
+  const inputEl = findInput();
 
   if (inputEl) {
+    console.log("[Aegis AI] Input found immediately:", inputEl.tagName, inputEl.id || inputEl.className.slice(0, 40));
     attachListeners(inputEl);
     return;
   }
 
   const observer = new MutationObserver(() => {
-    const input =
-      document.querySelector("textarea#prompt-textarea") ||
-      document.querySelector("[contenteditable='true']");
+    const input = findInput();
     if (input) {
+      console.log("[Aegis AI] Input found via observer:", input.tagName, input.id || input.className.slice(0, 40));
       attachListeners(input);
       observer.disconnect();
     }

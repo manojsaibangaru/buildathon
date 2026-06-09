@@ -45,10 +45,17 @@
   // ── Helper ────────────────────────────────────────────────────
   function isAIInput(el) {
     if (!el) return false;
-    return (
-      el.getAttribute("contenteditable") === "true" ||
-      el.tagName === "TEXTAREA"
-    );
+    // Prioritise known AI platform prompt boxes
+    if (el.id === "prompt-textarea") return true;
+    if (el.getAttribute("role") === "textbox") return true;
+    if (el.tagName === "TEXTAREA") return true;
+    // Generic contenteditable — only match if it's a direct child of a
+    // form-like container (avoids title/sidebar/contenteditable widgets)
+    if (el.getAttribute("contenteditable") === "true") {
+      const tag = el.tagName;
+      return tag === "DIV" || tag === "P" || tag === "SECTION";
+    }
+    return false;
   }
 
 
