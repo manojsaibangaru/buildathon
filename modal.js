@@ -104,7 +104,7 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
               Aegis AI — Sensitive Data Detected
             </div>
             <div style="font-size:12px; color:#888; margin-top:3px;">
-              ${originalText ? "Pasted content contains secrets." : "Your prompt contains secrets."} Choose an action below.
+              ${originalText ? "Pasted content contains secrets." : "Your prompt contains secrets."} Review and choose an action.
             </div>
           </div>
         </div>
@@ -164,13 +164,13 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
             padding:9px 18px; background:#1a1a2e;
             border:1px solid #e67e22; border-radius:6px;
             color:#e67e22; font-size:13px; font-weight:600; cursor:pointer;
-          ">Proceed Anyway</button>
+          ">Send Original</button>
 
           <button id="aegis-btn-redact" style="
             padding:9px 18px; background:#e94560;
             border:1px solid #e94560; border-radius:6px;
             color:#fff; font-size:13px; font-weight:600; cursor:pointer;
-          ">✓ Redact &amp; Continue</button>
+          ">✓ Redact Secrets</button>
         </div>
 
       </div>
@@ -251,66 +251,40 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
   }
 
   // Auto-submits the form after redaction
-  function autoSubmit() {
-    // Wait for React to re-enable the send button after the input event.
-    // Do NOT fall back to dispatching an Enter keydown — that re-triggers
-    // our scanner on the now-redacted content and shows the modal again.
-    setTimeout(() => {
-      const sendBtn =
-        document.querySelector('[data-testid="send-button"]') ||
-        document.querySelector('button[aria-label="Send prompt"]') ||
-        document.querySelector('button[aria-label="Send message"]');
-      if (sendBtn && !sendBtn.disabled) {
-        sendBtn.click();
-      }
-      // If no send button found, do nothing — user can press Enter manually.
-    }, 300);
-  }
-
-
   // ── BUTTON: Cancel ────────────────────────────────────────────
-  // Close modal. Nothing happens. Box stays unchanged.
+  // Close modal. Input stays empty (paste was blocked, nothing inserted).
   document.getElementById("aegis-btn-cancel")
     .addEventListener("click", () => {
       closeModal();
-      console.log("[Aegis AI] Cancelled.");
     });
 
 
-  // ── BUTTON: Proceed Anyway ────────────────────────────────────
-  // If paste: insert ORIGINAL unredacted text into box
-  // If send:  just close modal — text already in box, auto-submit
+  // ── BUTTON: Send Original ─────────────────────────────────────
+  // Inserts the original unredacted text into the box and closes
+  // the modal. User sees the text and decides when to send.
   document.getElementById("aegis-btn-proceed")
     .addEventListener("click", () => {
       if (originalText) {
-        // Paste was blocked — insert original text and submit
         writeToInput(originalText, true);
-        closeModal();
-        autoSubmit();
-      } else {
-        // Send was blocked — text in box already, just submit
-        closeModal();
-        autoSubmit();
       }
-      console.log("[Aegis AI] User proceeded with unredacted content.");
+      // For Enter-key case: text is already in box, just close.
+      closeModal();
+      inputEl.focus();
     });
 
 
-  // ── BUTTON: Redact & Continue ─────────────────────────────────
-  // If paste: insert REDACTED text into box, then auto-submit
-  // If send:  replace box content with redacted text, then auto-submit
+  // ── BUTTON: Redact Secrets ────────────────────────────────────
+  // Inserts the redacted version into the box and closes the modal.
+  // User reviews the redacted text and decides when to send.
   document.getElementById("aegis-btn-redact")
     .addEventListener("click", () => {
       if (originalText) {
-        // Paste case — insert redacted text at cursor
         writeToInput(redactedText, true);
       } else {
-        // Send case — replace full box content
         writeToInput(redactedText, false);
       }
       closeModal();
-      autoSubmit();
-      console.log("[Aegis AI] ✓ Redacted and submitted.");
+      inputEl.focus();
     });
 
 
