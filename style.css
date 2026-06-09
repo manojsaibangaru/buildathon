@@ -128,27 +128,37 @@ body {
   transform: translateX(20px);
 }
 
+/* ── Last Threat ── */
+.threat-level {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.threat-time {
+  font-size: 11px;
+  color: #555;
+  margin-top: 8px;
+}
+
 /* ── Finding Tags ── */
 .findings-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 5px;
 }
 
 .finding-tag {
   background-color: #2a1a1a;
-  border: 1px solid #e94560;
+  border: 1px solid #e9456088;
   color: #e94560;
   font-size: 10px;
   font-weight: 600;
-  padding: 3px 8px;
+  padding: 3px 7px;
   border-radius: 4px;
-  letter-spacing: 0.4px;
-  white-space: nowrap;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 /* ── Footer ── */

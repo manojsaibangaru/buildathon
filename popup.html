@@ -39,17 +39,19 @@
     </div>
   </div>
 
-  <!-- Last Scan Card -->
-  <div class="card">
-    <div class="row">
-      <span class="label">Last Scan</span>
-      <span id="last-score" class="value">—</span>
-    </div>
-    <div class="row" style="margin-top:10px;">
-      <span class="label">Risk Level</span>
-      <span id="last-level" class="value">—</span>
-    </div>
+  <!-- Last Threat Card -->
+  <div class="card" id="last-threat-card" style="display:none;">
+    <div class="label" style="margin-bottom:10px;">LAST THREAT BLOCKED</div>
+    <div class="threat-level" id="threat-level-text">—</div>
     <div id="last-findings" class="findings-list"></div>
+    <div class="threat-time" id="threat-time">—</div>
+  </div>
+
+  <!-- No threats yet -->
+  <div class="card" id="no-threat-card">
+    <div style="text-align:center; padding:6px 0; color:#555; font-size:12px;">
+      No threats detected yet
+    </div>
   </div>
 
   <!-- Footer -->
