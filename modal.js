@@ -145,7 +145,7 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
             font-size:12px; color:#ccc; line-height:1.6;
           ">
             ⚠️ Sending this prompt exposes your secrets to an external AI server.
-            <strong style="color:#e94560;">Redact &amp; Continue</strong> is strongly recommended.
+            <strong style="color:#e94560;">Redact Secrets</strong> is strongly recommended.
           </div>
         </div>
 
@@ -202,55 +202,23 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
   // Writes text into the input element.
   // isPaste = true  → inserting pasted text (was blocked, now approved)
   // isPaste = false → replacing entire box content (Enter-key redact case)
-  function writeToInput(text, isPaste = false) {
+  function writeToInput(text) {
     if (inputEl.tagName === "TEXTAREA") {
-      if (isPaste) {
-        const start   = inputEl.selectionStart;
-        const end     = inputEl.selectionEnd;
-        const current = inputEl.value;
-        inputEl.value = current.slice(0, start) + text + current.slice(end);
-        inputEl.selectionStart = inputEl.selectionEnd = start + text.length;
-      } else {
-        inputEl.value = text;
-      }
-      // Notify React / framework that the value changed
+      inputEl.value = text;
       inputEl.dispatchEvent(new Event("input", { bubbles: true }));
     } else {
-      // contenteditable div ─────────────────────────────────────
-      // Focus FIRST — document.activeElement must be the input when
-      // origExecCommand('insertText') runs in the MAIN world, otherwise
-      // the insertion lands nowhere (modal button still has focus).
+      // contenteditable: focus first so execCommand lands in the right place,
+      // then select-all so the insert replaces whatever is in the box.
       inputEl.focus();
-
-      if (isPaste) {
-        // Clear the entire input first — if any text slipped through
-        // the paste block, this prevents the redacted text from being
-        // appended after the original secrets.
-        const range = document.createRange();
-        range.selectNodeContents(inputEl);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        // Insert the approved/redacted text, replacing the selection.
-        window.dispatchEvent(
-          new CustomEvent("aegis:insert-text", { detail: { text } })
-        );
-      } else {
-        // Replace entire content: select all text first so insertText
-        // overwrites it.
-        const range = document.createRange();
-        range.selectNodeContents(inputEl);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        window.dispatchEvent(
-          new CustomEvent("aegis:insert-text", { detail: { text } })
-        );
-      }
+      const range = document.createRange();
+      range.selectNodeContents(inputEl);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
     }
   }
 
-  // Auto-submits the form after redaction
   // ── BUTTON: Cancel ────────────────────────────────────────────
   // Close modal. Input stays empty (paste was blocked, nothing inserted).
   document.getElementById("aegis-btn-cancel")
@@ -264,25 +232,17 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
   // the modal. User sees the text and decides when to send.
   document.getElementById("aegis-btn-proceed")
     .addEventListener("click", () => {
-      if (originalText) {
-        writeToInput(originalText, true);
-      }
-      // For Enter-key case: text is already in box, just close.
+      if (originalText) writeToInput(originalText);
+      // Enter-key case: text already in box, just close.
       closeModal();
       inputEl.focus();
     });
 
 
   // ── BUTTON: Redact Secrets ────────────────────────────────────
-  // Inserts the redacted version into the box and closes the modal.
-  // User reviews the redacted text and decides when to send.
   document.getElementById("aegis-btn-redact")
     .addEventListener("click", () => {
-      if (originalText) {
-        writeToInput(redactedText, true);
-      } else {
-        writeToInput(redactedText, false);
-      }
+      writeToInput(redactedText);
       closeModal();
       inputEl.focus();
     });

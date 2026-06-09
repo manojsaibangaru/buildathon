@@ -167,51 +167,41 @@ function getPromptText(el) {
 //   e.preventDefault() is called SYNCHRONOUSLY before async check.
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// MAIN-world bridge — registered ONCE globally, not per-input.
+// injected.js blocks every paste on AI inputs and fires this event.
+// We find which tracked input is active and decide what to do.
+// ─────────────────────────────────────────────
+let trackedInput = null; // set by attachListeners
+
+window.addEventListener("aegis:paste-starting", (e) => {
+  if (!trackedInput) return;
+  if (document.activeElement !== trackedInput &&
+      !trackedInput.contains(document.activeElement)) return;
+
+  const text = e.detail && e.detail.text;
+  if (!text || !aegisEnabled) {
+    window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text: text || "" } }));
+    return;
+  }
+
+  const scanResult = scanPrompt(text);
+  if (scanResult.score === 0) {
+    window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
+    return;
+  }
+
+  runPipeline(text, trackedInput, text);
+});
+
+
 function attachListeners(inputEl) {
   if (inputEl.dataset.aegisAttached) return;
   inputEl.dataset.aegisAttached = "true";
+  trackedInput = inputEl;
 
 
-  // ── 1. MAIN-world bridge (primary paste path for contenteditable)
-  //
-  // injected.js has already blocked the paste and fired this event
-  // with the clipboard text.  We decide here whether to approve it
-  // (possibly after redaction) or show the warning modal.
-  //
-  // This listener is on window (not inputEl) so it hears the event
-  // no matter which input is active.  We check document.activeElement
-  // to ensure it's our tracked element before acting.
-  window.addEventListener("aegis:paste-starting", (e) => {
-    // Ignore if this input isn't the active one
-    if (document.activeElement !== inputEl &&
-        !inputEl.contains(document.activeElement)) return;
-
-    const text = e.detail && e.detail.text;
-    if (!text) {
-      // No text — unblock so execCommand proceeds
-      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text: "" } }));
-      return;
-    }
-
-    if (!aegisEnabled) {
-      // Extension disabled — pass text through untouched
-      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
-      return;
-    }
-
-    const scanResult = scanPrompt(text);
-    if (scanResult.score === 0) {
-      // Safe — approve the insertion
-      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
-      return;
-    }
-
-    // Secrets found — show the modal; modal buttons dispatch aegis:insert-text
-    runPipeline(text, inputEl, text);
-  });
-
-
-  // ── 2. Native paste listener (fallback for <textarea> elements)
+  // ── 1. Native paste listener (fallback for <textarea> elements)
   //
   // For textarea, React does NOT use execCommand, so the MAIN-world
   // override in injected.js won't fire.  We catch it here.
@@ -251,6 +241,7 @@ function attachListeners(inputEl) {
   // secrets found.  The aegisEnabled check can be async after that.
   inputEl.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey) return;
+    if (!aegisEnabled) return; // Protection off — let Enter through
 
     const text = getPromptText(inputEl);
     if (!text) return;
@@ -258,12 +249,8 @@ function attachListeners(inputEl) {
     const quickScan = scanPrompt(text);
     if (quickScan.score === 0) return; // Safe — let Enter proceed
 
-    // Block synchronously before any async code
     e.preventDefault();
     e.stopImmediatePropagation();
-
-    if (!aegisEnabled) return; // Disabled — the submit is still blocked, user re-presses Enter
-
     runPipeline(text, inputEl, null);
   }, true);
 
