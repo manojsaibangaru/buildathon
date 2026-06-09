@@ -69,6 +69,8 @@ function scanPrompt(text) {
     const matches = [...text.matchAll(globalRegex)];
     if (!matches.length) continue;
     for (const match of matches) {
+      // Skip values that were already redacted in a previous pass
+      if (match[0].includes("[REDACTED]")) continue;
       findings.push({ type, severity, match: match[0] });
       rawScore += SEVERITY_SCORES[severity];
     }

@@ -252,19 +252,18 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
 
   // Auto-submits the form after redaction
   function autoSubmit() {
-    // Give React two animation frames to process the input event and
-    // re-enable the send button before we try to click it.
+    // Wait for React to re-enable the send button after the input event.
+    // Do NOT fall back to dispatching an Enter keydown — that re-triggers
+    // our scanner on the now-redacted content and shows the modal again.
     setTimeout(() => {
       const sendBtn =
         document.querySelector('[data-testid="send-button"]') ||
-        document.querySelector('button[aria-label="Send prompt"]');
+        document.querySelector('button[aria-label="Send prompt"]') ||
+        document.querySelector('button[aria-label="Send message"]');
       if (sendBtn && !sendBtn.disabled) {
         sendBtn.click();
-      } else {
-        inputEl.dispatchEvent(new KeyboardEvent("keydown", {
-          key: "Enter", bubbles: true, cancelable: true
-        }));
       }
+      // If no send button found, do nothing — user can press Enter manually.
     }, 300);
   }
 
@@ -293,7 +292,7 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
         closeModal();
         autoSubmit();
       }
-      console.warn("[Aegis AI] ⚠️ User proceeded with unredacted content.");
+      console.log("[Aegis AI] User proceeded with unredacted content.");
     });
 
 
