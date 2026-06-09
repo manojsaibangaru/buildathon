@@ -199,42 +199,40 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
     if (overlay && overlay.parentNode) overlay.parentNode.remove();
   }
 
-  // Writes text into textarea or contenteditable div
-  // isPaste = true → insert at cursor position
-  // isPaste = false → replace entire box content
+  // Writes text into the input element.
+  // isPaste = true  → inserting pasted text (was blocked, now approved)
+  // isPaste = false → replacing entire box content (Enter-key redact case)
   function writeToInput(text, isPaste = false) {
     if (inputEl.tagName === "TEXTAREA") {
       if (isPaste) {
-        // Insert at cursor position
         const start   = inputEl.selectionStart;
         const end     = inputEl.selectionEnd;
         const current = inputEl.value;
         inputEl.value = current.slice(0, start) + text + current.slice(end);
+        inputEl.selectionStart = inputEl.selectionEnd = start + text.length;
       } else {
         inputEl.value = text;
       }
+      // Notify React / framework that the value changed
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
     } else {
-      // contenteditable div
+      // contenteditable div ─────────────────────────────────────
+      // Route through the MAIN-world bridge so React's synthetic
+      // input event fires and its virtual DOM stays in sync.
       if (isPaste) {
-        const sel   = window.getSelection();
-        if (sel.rangeCount > 0) {
-          const range = sel.getRangeAt(0);
-          range.deleteContents();
-          range.insertNode(document.createTextNode(text));
-        } else {
-          inputEl.innerText += text;
-        }
+        // The cursor position is still where the user left it when
+        // they pasted; origExecCommand will insert at that position.
+        window.dispatchEvent(
+          new CustomEvent("aegis:insert-text", { detail: { text } })
+        );
       } else {
-        inputEl.innerText = text;
+        // Replace entire content: select-all then insert new text.
+        inputEl.focus();
+        document.execCommand("selectAll");
+        window.dispatchEvent(
+          new CustomEvent("aegis:insert-text", { detail: { text } })
+        );
       }
-
-      // Restore cursor to end
-      const range = document.createRange();
-      const s     = window.getSelection();
-      range.selectNodeContents(inputEl);
-      range.collapse(false);
-      s.removeAllRanges();
-      s.addRange(range);
     }
     inputEl.focus();
   }

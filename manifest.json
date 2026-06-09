@@ -30,7 +30,18 @@
         "https://claude.ai/*",
         "https://gemini.google.com/*"
       ],
-      "js": ["exposureEngine.js","modal.js", "content.js"],
+      "js": ["injected.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["exposureEngine.js", "modal.js", "content.js"],
       "run_at": "document_idle"
     }
   ],

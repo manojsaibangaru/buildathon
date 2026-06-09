@@ -1,10 +1,19 @@
 "use strict";
 
 // ═══════════════════════════════════════════════════════════════
-// AEGIS AI — content.js
+// AEGIS AI — content.js  (isolated world, document_idle)
 // Depends on: exposureEngine.js, modal.js (loaded before this)
-// Intercepts: Paste events + Enter key
-// Send button interception removed — React bypasses preventDefault
+//
+// Paste interception works in two layers:
+//   • injected.js (MAIN world, document_start) intercepts the paste
+//     event and execCommand BEFORE React, then fires the custom
+//     event 'aegis:paste-starting' with the clipboard text.
+//   • This file listens for that event, scans the text, and either
+//     approves the insertion via 'aegis:insert-text' or shows the
+//     warning modal.
+//
+// For Enter-key submission we still use a direct keydown listener
+// with a synchronous e.preventDefault() (before any async code).
 // ═══════════════════════════════════════════════════════════════
 
 
@@ -25,7 +34,26 @@ const SEVERITY_SCORES = { CRITICAL: 50, HIGH: 25, MEDIUM: 10, LOW: 5 };
 
 
 // ─────────────────────────────────────────────
-// SECTION 2: scanPrompt(text)
+// SECTION 2: aegisEnabled cache
+// chrome.storage.local.get is async; we cache the value so we can
+// check it synchronously inside event handlers.
+// ─────────────────────────────────────────────
+
+let aegisEnabled = true; // default until storage responds
+
+chrome.storage.local.get(["aegisEnabled"], (data) => {
+  if (data.aegisEnabled === false) aegisEnabled = false;
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if ("aegisEnabled" in changes) {
+    aegisEnabled = changes.aegisEnabled.newValue !== false;
+  }
+});
+
+
+// ─────────────────────────────────────────────
+// SECTION 3: scanPrompt(text)
 // ─────────────────────────────────────────────
 
 function scanPrompt(text) {
@@ -51,7 +79,7 @@ function scanPrompt(text) {
 
 
 // ─────────────────────────────────────────────
-// SECTION 3: redactSecrets(text)
+// SECTION 4: redactSecrets(text)
 // ─────────────────────────────────────────────
 
 function redactSecrets(text) {
@@ -69,7 +97,7 @@ function redactSecrets(text) {
 
 
 // ─────────────────────────────────────────────
-// SECTION 4: getPlatformContext()
+// SECTION 5: getPlatformContext()
 // ─────────────────────────────────────────────
 
 function getPlatformContext() {
@@ -85,29 +113,20 @@ function getPlatformContext() {
 
 
 // ─────────────────────────────────────────────
-// SECTION 5: runPipeline(text, inputEl, originalText)
-// originalText → only set when triggered by paste
-// null         → when triggered by Enter key
+// SECTION 6: runPipeline(text, inputEl, originalText)
+// originalText → set when triggered by paste (null for Enter key)
 // ─────────────────────────────────────────────
 
 function runPipeline(text, inputEl, originalText = null) {
-
-  // Step 1: Scan for secrets
   const scanResult = scanPrompt(text);
   if (scanResult.score === 0) return;
 
-  // Step 2: Calculate exposure score
-  const context  = getPlatformContext();
-  const exposure = calculateExposure(scanResult.findings, context);
-
-  // Step 3: Compute redacted version of the text
+  const context    = getPlatformContext();
+  const exposure   = calculateExposure(scanResult.findings, context);
   const redactedText = redactSecrets(text);
 
-  // Step 4: Show warning modal
-  // originalText tells modal whether this was a paste or Enter
   showWarningModal(scanResult.findings, exposure, redactedText, inputEl, originalText);
 
-  // Step 5: Save result to storage so popup can display it
   chrome.storage.local.set({
     lastScan: {
       timestamp:   new Date().toISOString(),
@@ -121,8 +140,7 @@ function runPipeline(text, inputEl, originalText = null) {
 
 
 // ─────────────────────────────────────────────
-// SECTION 6: getPromptText(el)
-// Reads current text from textarea or contenteditable div
+// SECTION 7: getPromptText(el)
 // ─────────────────────────────────────────────
 
 function getPromptText(el) {
@@ -133,11 +151,18 @@ function getPromptText(el) {
 
 
 // ─────────────────────────────────────────────
-// SECTION 7: attachListeners(inputEl)
-// Two interceptions only:
-//   1. Paste  → blocks before text enters box
-//   2. Enter  → blocks before ChatGPT submits
-// Send button removed — React bypasses preventDefault
+// SECTION 8: attachListeners(inputEl)
+//
+// Paste interception path (contenteditable / React):
+//   injected.js fires 'aegis:paste-starting' on window →
+//   we scan here → approve via 'aegis:insert-text' or show modal.
+//
+// Paste interception fallback (textarea):
+//   Native paste event on the element — e.preventDefault() is
+//   called SYNCHRONOUSLY before entering any async callback.
+//
+// Enter key:
+//   e.preventDefault() is called SYNCHRONOUSLY before async check.
 // ─────────────────────────────────────────────
 
 function attachListeners(inputEl) {
@@ -145,59 +170,100 @@ function attachListeners(inputEl) {
   inputEl.dataset.aegisAttached = "true";
 
 
-  // ── 1. PASTE interception ──────────────────────────────────────
-  // Fires the moment user pastes anything into the prompt box.
-  // We read the clipboard text BEFORE it enters the input.
-  // If secrets found: block the paste and show the modal instead.
+  // ── 1. MAIN-world bridge (primary paste path for contenteditable)
+  //
+  // injected.js has already blocked the paste and fired this event
+  // with the clipboard text.  We decide here whether to approve it
+  // (possibly after redaction) or show the warning modal.
+  //
+  // This listener is on window (not inputEl) so it hears the event
+  // no matter which input is active.  We check document.activeElement
+  // to ensure it's our tracked element before acting.
+  window.addEventListener("aegis:paste-starting", (e) => {
+    // Ignore if this input isn't the active one
+    if (document.activeElement !== inputEl &&
+        !inputEl.contains(document.activeElement)) return;
+
+    const text = e.detail && e.detail.text;
+    if (!text) {
+      // No text — unblock so execCommand proceeds
+      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text: "" } }));
+      return;
+    }
+
+    if (!aegisEnabled) {
+      // Extension disabled — pass text through untouched
+      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
+      return;
+    }
+
+    const scanResult = scanPrompt(text);
+    if (scanResult.score === 0) {
+      // Safe — approve the insertion
+      window.dispatchEvent(new CustomEvent("aegis:insert-text", { detail: { text } }));
+      return;
+    }
+
+    // Secrets found — show the modal; modal buttons dispatch aegis:insert-text
+    runPipeline(text, inputEl, text);
+  });
+
+
+  // ── 2. Native paste listener (fallback for <textarea> elements)
+  //
+  // For textarea, React does NOT use execCommand, so the MAIN-world
+  // override in injected.js won't fire.  We catch it here.
+  //
+  // CRITICAL: e.preventDefault() must be called SYNCHRONOUSLY,
+  // before entering any async callback (chrome.storage.local.get
+  // is async and the event will have already been processed by the
+  // time its callback fires — the old bug).
   inputEl.addEventListener("paste", (e) => {
-    chrome.storage.local.get(["aegisEnabled"], (data) => {
-      if (data.aegisEnabled === false) return;
+    // Only handle textarea; contenteditable is handled by the bridge
+    if (inputEl.tagName !== "TEXTAREA") return;
 
-      // Read raw text from clipboard
-      const pastedText = (e.clipboardData || window.clipboardData).getData("text");
-      if (!pastedText) return;
+    const pastedText = (e.clipboardData || window.clipboardData).getData("text");
+    if (!pastedText) return;
 
-      // Scan the pasted text
-      const scanResult = scanPrompt(pastedText);
-      if (scanResult.score === 0) return;
+    // Quick synchronous scan to see if blocking is warranted
+    const quickScan = scanPrompt(pastedText);
+    if (quickScan.score === 0) return; // Safe — let native paste proceed
 
-      // Block the paste from entering the box
-      e.preventDefault();
-      e.stopImmediatePropagation();
+    // Block NOW — synchronously, while the event is still cancellable
+    e.preventDefault();
+    e.stopImmediatePropagation();
 
-      // Run pipeline — pass pastedText as originalText
-      // so modal knows this came from paste, not Enter
-      runPipeline(pastedText, inputEl, pastedText);
-    });
-  }, true); // true = capture phase, fires before ChatGPT's handler
+    // Async check is now safe: the paste is already blocked
+    if (!aegisEnabled) {
+      insertIntoTextarea(inputEl, pastedText);
+      return;
+    }
+
+    runPipeline(pastedText, inputEl, pastedText);
+  }, true);
 
 
-  // ── 2. ENTER KEY interception ──────────────────────────────────
-  // Fires when user presses Enter to submit the prompt.
-  // Shift+Enter = new line (ignored).
-  // Enter alone = submit → we scan first and block if secrets found.
+  // ── 3. ENTER KEY interception ──────────────────────────────────
+  //
+  // Same fix: scan synchronously first, then block synchronously if
+  // secrets found.  The aegisEnabled check can be async after that.
   inputEl.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.shiftKey) return;
 
-    chrome.storage.local.get(["aegisEnabled"], (data) => {
-      if (data.aegisEnabled === false) return;
+    const text = getPromptText(inputEl);
+    if (!text) return;
 
-      // Read text currently in the box
-      const text = getPromptText(inputEl);
-      if (!text) return;
+    const quickScan = scanPrompt(text);
+    if (quickScan.score === 0) return; // Safe — let Enter proceed
 
-      // Scan it
-      const scanResult = scanPrompt(text);
-      if (scanResult.score === 0) return;
+    // Block synchronously before any async code
+    e.preventDefault();
+    e.stopImmediatePropagation();
 
-      // Block the Enter key from submitting
-      e.preventDefault();
-      e.stopImmediatePropagation();
+    if (!aegisEnabled) return; // Disabled — the submit is still blocked, user re-presses Enter
 
-      // Run pipeline — originalText = null (text already in box)
-      runPipeline(text, inputEl, null);
-    });
-  }, true); // true = capture phase, fires before ChatGPT's handler
+    runPipeline(text, inputEl, null);
+  }, true);
 
 
   console.log("[Aegis AI] Listeners attached ✓");
@@ -205,15 +271,24 @@ function attachListeners(inputEl) {
 
 
 // ─────────────────────────────────────────────
-// SECTION 8: init()
-// Finds the prompt input box.
-// If not ready yet, watches DOM via MutationObserver.
-// Note: sendBtn no longer needed — removed from attachListeners
+// Helper: insert text into a <textarea> at cursor position.
+// Used when the paste was blocked but Aegis is disabled.
+// ─────────────────────────────────────────────
+
+function insertIntoTextarea(el, text) {
+  const start = el.selectionStart;
+  const end   = el.selectionEnd;
+  el.value    = el.value.slice(0, start) + text + el.value.slice(end);
+  el.selectionStart = el.selectionEnd = start + text.length;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+
+// ─────────────────────────────────────────────
+// SECTION 9: init()
 // ─────────────────────────────────────────────
 
 function init() {
-
-  // Detect platform and save to storage for popup display
   const host = window.location.hostname;
   let platform = "Unknown";
   if (host.includes("chatgpt.com") || host.includes("chat.openai.com")) platform = "ChatGPT";
@@ -223,23 +298,22 @@ function init() {
   chrome.storage.local.set({ aegisStatus: "active", platform });
   console.log("[Aegis AI] Loaded on:", platform);
 
-  // Try to find the input box immediately
-  const inputEl = document.querySelector("textarea#prompt-textarea") ||
-                  document.querySelector("[contenteditable='true']");
+  const inputEl =
+    document.querySelector("textarea#prompt-textarea") ||
+    document.querySelector("[contenteditable='true']");
 
   if (inputEl) {
     attachListeners(inputEl);
     return;
   }
 
-  // Input not ready yet — ChatGPT renders it dynamically via React
-  // MutationObserver watches DOM until the input appears
   const observer = new MutationObserver(() => {
-    const input = document.querySelector("textarea#prompt-textarea") ||
-                  document.querySelector("[contenteditable='true']");
+    const input =
+      document.querySelector("textarea#prompt-textarea") ||
+      document.querySelector("[contenteditable='true']");
     if (input) {
       attachListeners(input);
-      observer.disconnect(); // Stop watching once found
+      observer.disconnect();
     }
   });
 
@@ -248,7 +322,7 @@ function init() {
 
 
 // ─────────────────────────────────────────────
-// SECTION 9: Boot
+// SECTION 10: Boot
 // ─────────────────────────────────────────────
 
 if (document.readyState === "loading") {
