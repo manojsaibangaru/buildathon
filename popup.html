@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Aegis AI</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <img src="icons/icon48.png" alt="logo" class="logo" />
+    <h1 class="title">Aegis AI</h1>
+  </div>
+
+  <!-- Status Card -->
+  <div class="card">
+    <div class="row">
+      <span class="label">Status</span>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span id="status-dot" class="dot dot-inactive"></span>
+        <span id="status-text" class="value">Loading...</span>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <span class="label">Platform</span>
+      <span id="platform-text" class="value">—</span>
+    </div>
+  </div>
+
+  <!-- Protection Toggle -->
+  <div class="card">
+    <div class="row">
+      <span class="label">Protection</span>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-input" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Last Scan Card -->
+  <div class="card">
+    <div class="row">
+      <span class="label">Last Scan</span>
+      <span id="last-score" class="value">—</span>
+    </div>
+    <div class="row" style="margin-top:10px;">
+      <span class="label">Risk Level</span>
+      <span id="last-level" class="value">—</span>
+    </div>
+    <div id="last-findings" class="findings-list"></div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">Aegis AI v1.0 — Protecting your prompts</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
