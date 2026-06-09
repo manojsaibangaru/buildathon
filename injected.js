@@ -45,16 +45,30 @@
   // ── Helper ────────────────────────────────────────────────────
   function isAIInput(el) {
     if (!el) return false;
-    return (
-      el.getAttribute("contenteditable") === "true" ||
-      el.tagName === "TEXTAREA"
-    );
+    // Prioritise known AI platform prompt boxes
+    if (el.id === "prompt-textarea") return true;
+    if (el.getAttribute("role") === "textbox") return true;
+    if (el.tagName === "TEXTAREA") return true;
+    // Generic contenteditable — only match if it's a direct child of a
+    // form-like container (avoids title/sidebar/contenteditable widgets)
+    if (el.getAttribute("contenteditable") === "true") {
+      const tag = el.tagName;
+      return tag === "DIV" || tag === "P" || tag === "SECTION";
+    }
+    return false;
   }
 
 
   // ── Layer 1: capture-phase paste listener (before React) ──────
   // Registered NOW at document_start so it sits ahead of React's
   // capture listener in the event-listener queue.
+  //
+  // We call preventDefault() + stopImmediatePropagation() here to
+  // block BOTH the native browser paste AND React's own paste handler
+  // (which is also a capture-phase listener on document, but registered
+  // later).  Modern Chrome/React no longer routes contenteditable paste
+  // through execCommand, so the execCommand override alone is not
+  // sufficient — we must stop the event here.
   document.addEventListener(
     "paste",
     function (e) {
@@ -64,16 +78,18 @@
       const text = e.clipboardData && e.clipboardData.getData("text");
       if (!text) return;
 
-      // Arm the execCommand block for this paste cycle.
+      // Block the paste unconditionally — the content script will
+      // insert the approved (or redacted) text via aegis:insert-text.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
       pasteInProgress = true;
 
-      // Tell the content script what text is about to be pasted so
-      // it can scan asynchronously and decide what to do.
       window.dispatchEvent(
         new CustomEvent("aegis:paste-starting", { detail: { text } })
       );
     },
-    true // capture phase
+    true // capture phase — fires before React's listener
   );
 
 

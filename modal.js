@@ -217,38 +217,55 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
       inputEl.dispatchEvent(new Event("input", { bubbles: true }));
     } else {
       // contenteditable div ─────────────────────────────────────
-      // Route through the MAIN-world bridge so React's synthetic
-      // input event fires and its virtual DOM stays in sync.
+      // Focus FIRST — document.activeElement must be the input when
+      // origExecCommand('insertText') runs in the MAIN world, otherwise
+      // the insertion lands nowhere (modal button still has focus).
+      inputEl.focus();
+
       if (isPaste) {
-        // The cursor position is still where the user left it when
-        // they pasted; origExecCommand will insert at that position.
+        // Clear the entire input first — if any text slipped through
+        // the paste block, this prevents the redacted text from being
+        // appended after the original secrets.
+        const range = document.createRange();
+        range.selectNodeContents(inputEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // Insert the approved/redacted text, replacing the selection.
         window.dispatchEvent(
           new CustomEvent("aegis:insert-text", { detail: { text } })
         );
       } else {
-        // Replace entire content: select-all then insert new text.
-        inputEl.focus();
-        document.execCommand("selectAll");
+        // Replace entire content: select all text first so insertText
+        // overwrites it.
+        const range = document.createRange();
+        range.selectNodeContents(inputEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
         window.dispatchEvent(
           new CustomEvent("aegis:insert-text", { detail: { text } })
         );
       }
     }
-    inputEl.focus();
   }
 
   // Auto-submits the form after redaction
   function autoSubmit() {
+    // Give React two animation frames to process the input event and
+    // re-enable the send button before we try to click it.
     setTimeout(() => {
-      const sendBtn = document.querySelector('[data-testid="send-button"]');
-      if (sendBtn) {
+      const sendBtn =
+        document.querySelector('[data-testid="send-button"]') ||
+        document.querySelector('button[aria-label="Send prompt"]');
+      if (sendBtn && !sendBtn.disabled) {
         sendBtn.click();
       } else {
         inputEl.dispatchEvent(new KeyboardEvent("keydown", {
           key: "Enter", bubbles: true, cancelable: true
         }));
       }
-    }, 100);
+    }, 300);
   }
 
 
