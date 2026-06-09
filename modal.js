@@ -223,8 +223,15 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
       inputEl.focus();
 
       if (isPaste) {
-        // Insert at cursor position (cursor is at end of the empty
-        // input because the original paste was blocked).
+        // Clear the entire input first — if any text slipped through
+        // the paste block, this prevents the redacted text from being
+        // appended after the original secrets.
+        const range = document.createRange();
+        range.selectNodeContents(inputEl);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // Insert the approved/redacted text, replacing the selection.
         window.dispatchEvent(
           new CustomEvent("aegis:insert-text", { detail: { text } })
         );
