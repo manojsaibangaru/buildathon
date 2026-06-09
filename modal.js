@@ -2,8 +2,6 @@
 
 // ═══════════════════════════════════════════════════════════════
 // AEGIS AI — modal.js
-// Defines: showWarningModal(findings, exposure, redactedText, inputEl, originalText)
-// originalText → set when triggered by paste (null when triggered by Send/Enter)
 // ═══════════════════════════════════════════════════════════════
 
 function showWarningModal(findings, exposure, redactedText, inputEl, originalText = null) {
@@ -11,15 +9,15 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
   const existing = document.getElementById("aegis-modal-overlay");
   if (existing) existing.remove();
 
-  const levelConfig = {
-    CRITICAL: { color: "#e74c3c", bg: "#2c0a0a", icon: "🔴" },
-    HIGH:     { color: "#e67e22", bg: "#2c1a0a", icon: "🟠" },
-    MEDIUM:   { color: "#f1c40f", bg: "#2c2a0a", icon: "🟡" },
-    LOW:      { color: "#2ecc71", bg: "#0a2c1a", icon: "🟢" },
-    NONE:     { color: "#888888", bg: "#1a1a1a", icon: "⚪" },
-  };
+  // ── Config ────────────────────────────────────────────────────
 
-  const cfg = levelConfig[exposure.level] || levelConfig.NONE;
+  const levelConfig = {
+    CRITICAL: { color: "#e74c3c", bg: "#2c0a0a", label: "CRITICAL RISK" },
+    HIGH:     { color: "#e67e22", bg: "#2c1a0a", label: "HIGH RISK"     },
+    MEDIUM:   { color: "#f1c40f", bg: "#2c2a0a", label: "MEDIUM RISK"   },
+    LOW:      { color: "#2ecc71", bg: "#0a2c1a", label: "LOW RISK"      },
+    NONE:     { color: "#888888", bg: "#1a1a1a", label: "NO RISK"       },
+  };
 
   const severityColors = {
     CRITICAL: "#e74c3c",
@@ -28,149 +26,162 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
     LOW:      "#2ecc71",
   };
 
-  const findingsHTML = findings.map((f) => `
-    <div style="
-      display:flex; align-items:center; gap:10px;
-      padding:8px 12px; background:#1a1a2e;
-      border:1px solid #2a2a3d;
-      border-left:3px solid ${severityColors[f.severity] || "#888"};
-      border-radius:6px; margin-bottom:6px;
-    ">
-      <span style="
-        background:#2a2a3d; color:#e0e0e0;
-        font-size:11px; font-weight:700;
-        padding:3px 8px; border-radius:4px;
-        letter-spacing:0.5px; font-family:monospace;
-      ">${f.type}</span>
-      <span style="
-        color:${severityColors[f.severity] || "#888"};
-        font-size:11px; font-weight:600; margin-left:auto;
-      ">${f.severity}</span>
-    </div>
-  `).join("");
+  // What could actually happen for each secret type — plain English, urgent
+  const RISK_DESCRIPTIONS = {
+    AWS_ACCESS_KEY:       "Full AWS account access. Attackers scan AI logs. Average time to exploit: 4 minutes.",
+    AWS_SECRET_KEY:       "Complete cloud takeover — spin up servers, drain S3 buckets, run up thousands in charges.",
+    PASSWORD:             "Account takeover on every service where this password is reused.",
+    API_KEY:              "Your credits get stolen and every conversation you've had becomes readable to the attacker.",
+    JWT:                  "Session hijack — attacker logs in as you instantly, no password needed.",
+    DB_CONNECTION_STRING: "Direct read, write, and delete access to your entire database. All data exposed.",
+  };
 
-  const radius        = 36;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset    = circumference - (exposure.score / 100) * circumference;
+  // Platform-specific context message
+  const platformMessages = {
+    ChatGPT: "ChatGPT retains conversation data that can be accessed by OpenAI staff and potentially leaked.",
+    Claude:  "Claude stores conversation history — leaked contracts and credentials persist on Anthropic servers.",
+    Gemini:  "Gemini is connected to your Google account and may use inputs to train future models.",
+  };
 
-  const scoreRingHTML = `
-    <div style="position:relative; width:90px; height:90px; flex-shrink:0;">
-      <svg width="90" height="90" style="transform:rotate(-90deg);">
-        <circle cx="45" cy="45" r="${radius}" fill="none" stroke="#2a2a3d" stroke-width="8"/>
-        <circle cx="45" cy="45" r="${radius}" fill="none"
-          stroke="${cfg.color}" stroke-width="8" stroke-linecap="round"
-          stroke-dasharray="${circumference}" stroke-dashoffset="${dashOffset}"/>
-      </svg>
+  const host = window.location.hostname;
+  let platform = "this AI";
+  let platformMsg = "AI tools store your conversations on external servers you don't control.";
+  if (host.includes("chatgpt.com") || host.includes("chat.openai.com")) { platform = "ChatGPT"; platformMsg = platformMessages.ChatGPT; }
+  else if (host.includes("claude.ai"))          { platform = "Claude";  platformMsg = platformMessages.Claude;  }
+  else if (host.includes("gemini.google.com"))  { platform = "Gemini";  platformMsg = platformMessages.Gemini;  }
+
+  const cfg = levelConfig[exposure.level] || levelConfig.NONE;
+
+  // ── Group duplicate findings by type ─────────────────────────
+  const grouped = {};
+  for (const f of findings) {
+    if (!grouped[f.type]) grouped[f.type] = { ...f, count: 0 };
+    grouped[f.type].count++;
+  }
+  const uniqueFindings = Object.values(grouped);
+
+  // ── Build finding rows ────────────────────────────────────────
+  const findingsHTML = uniqueFindings.map((f) => {
+    const riskDesc = RISK_DESCRIPTIONS[f.type] || "Sensitive data that should not leave your machine.";
+    const countLabel = f.count > 1 ? ` <span style="color:#888;font-size:10px;">(×${f.count})</span>` : "";
+    const displayName = f.type.replace(/_/g, " ");
+    return `
       <div style="
-        position:absolute; top:50%; left:50%;
-        transform:translate(-50%,-50%); text-align:center; line-height:1;
+        padding:10px 14px; background:#12121f;
+        border:1px solid #2a2a3d;
+        border-left:3px solid ${severityColors[f.severity] || "#888"};
+        border-radius:6px; margin-bottom:8px;
       ">
-        <div style="font-size:20px; font-weight:800; color:${cfg.color};">${exposure.score}</div>
-        <div style="font-size:9px; color:#888; margin-top:2px;">/ 100</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:5px;">
+          <span style="
+            font-size:12px; font-weight:700; color:#e0e0e0;
+            font-family:monospace; letter-spacing:0.3px;
+          ">${displayName}${countLabel}</span>
+          <span style="
+            font-size:10px; font-weight:700; color:${severityColors[f.severity] || "#888"};
+            background:${severityColors[f.severity]}18;
+            padding:2px 8px; border-radius:3px;
+          ">${f.severity}</span>
+        </div>
+        <div style="font-size:11px; color:#aaa; line-height:1.5;">
+          ${riskDesc}
+        </div>
       </div>
-    </div>
-  `;
+    `;
+  }).join("");
 
+  // ── Modal HTML ────────────────────────────────────────────────
   const modalHTML = `
     <div id="aegis-modal-overlay" style="
       position:fixed; top:0; left:0; width:100vw; height:100vh;
-      background:rgba(0,0,0,0.75); z-index:2147483647;
+      background:rgba(0,0,0,0.8); z-index:2147483647;
       display:flex; align-items:center; justify-content:center;
-      font-family:'Segoe UI',Arial,sans-serif; backdrop-filter:blur(3px);
+      font-family:'Segoe UI',Arial,sans-serif; backdrop-filter:blur(4px);
     ">
       <div id="aegis-modal" style="
         background:#0f1117; border:1px solid ${cfg.color};
-        border-radius:12px; width:480px; max-width:95vw;
-        box-shadow:0 0 40px ${cfg.color}44, 0 20px 60px rgba(0,0,0,0.8);
-        overflow:hidden; animation:aegisFadeIn 0.2s ease;
+        border-radius:12px; width:500px; max-width:95vw; max-height:90vh;
+        overflow-y:auto;
+        box-shadow:0 0 40px ${cfg.color}33, 0 24px 64px rgba(0,0,0,0.9);
+        animation:aegisFadeIn 0.18s ease;
       ">
 
-        <!-- Top color bar -->
-        <div style="height:4px; background:${cfg.color};"></div>
+        <!-- Top bar -->
+        <div style="height:4px; background:${cfg.color}; border-radius:12px 12px 0 0;"></div>
 
         <!-- Header -->
-        <div style="
-          padding:20px 24px 16px; border-bottom:1px solid #1e1e2e;
-          display:flex; align-items:center; gap:12px;
-        ">
+        <div style="padding:18px 22px 14px; display:flex; align-items:center; gap:12px; border-bottom:1px solid #1e1e2e;">
           <div style="
-            width:42px; height:42px; background:${cfg.bg};
-            border:1px solid ${cfg.color}; border-radius:8px;
-            display:flex; align-items:center; justify-content:center;
-            font-size:22px; flex-shrink:0;
+            width:38px; height:38px; flex-shrink:0;
+            background:${cfg.bg}; border:1px solid ${cfg.color};
+            border-radius:8px; display:flex; align-items:center; justify-content:center;
+            font-size:20px;
           ">🛡️</div>
           <div>
-            <div style="font-size:16px; font-weight:700; color:#fff; letter-spacing:0.3px;">
-              Aegis AI — Sensitive Data Detected
+            <div style="font-size:15px; font-weight:700; color:#fff;">
+              Aegis AI — Secrets Detected
             </div>
-            <div style="font-size:12px; color:#888; margin-top:3px;">
-              ${originalText ? "Pasted content contains secrets." : "Your prompt contains secrets."} Review and choose an action.
+            <div style="font-size:12px; color:#666; margin-top:2px;">
+              ${originalText ? "Your pasted text" : "Your prompt"} contains <strong style="color:#e0e0e0;">${uniqueFindings.length} type${uniqueFindings.length > 1 ? "s" : ""} of sensitive data</strong>
             </div>
           </div>
         </div>
 
-        <!-- Body -->
-        <div style="padding:20px 24px;">
-
-          <!-- Score + Level -->
-          <div style="
-            display:flex; align-items:center; gap:20px; padding:16px;
-            background:${cfg.bg}; border:1px solid ${cfg.color}44;
-            border-radius:8px; margin-bottom:18px;
-          ">
-            ${scoreRingHTML}
-            <div style="flex:1; min-width:0;">
-              <div style="font-size:24px; font-weight:800; color:${cfg.color}; letter-spacing:1px;">
-                ${cfg.icon} ${exposure.level}
-              </div>
-              <div style="font-size:11px; color:#aaa; margin-top:6px; line-height:1.6; word-break:break-word;">
-                ${exposure.explanation[0]}
-              </div>
-            </div>
-          </div>
-
-          <!-- Findings label -->
-          <div style="
-            font-size:11px; font-weight:700; color:#666;
-            text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;
-          ">Detected Secrets (${findings.length})</div>
-
-          <!-- Findings list -->
-          <div style="margin-bottom:18px;">${findingsHTML}</div>
-
-          <!-- Warning text -->
-          <div style="
-            background:#1a0a0a; border:1px solid #e74c3c44;
-            border-radius:6px; padding:10px 14px;
-            font-size:12px; color:#ccc; line-height:1.6;
-          ">
-            ⚠️ Sending this prompt exposes your secrets to an external AI server.
-            <strong style="color:#e94560;">Redact Secrets</strong> is strongly recommended.
-          </div>
-        </div>
-
-        <!-- Footer buttons -->
+        <!-- Risk summary -->
         <div style="
-          padding:16px 24px 20px; border-top:1px solid #1e1e2e;
-          display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;
+          margin:16px 22px 0;
+          padding:14px 16px;
+          background:${cfg.bg}; border:1px solid ${cfg.color}44;
+          border-radius:8px;
         ">
-          <button id="aegis-btn-cancel" style="
-            padding:9px 18px; background:transparent;
-            border:1px solid #3a3a4d; border-radius:6px;
-            color:#888; font-size:13px; font-weight:600; cursor:pointer;
-          ">Cancel</button>
+          <div style="font-size:18px; font-weight:800; color:${cfg.color}; margin-bottom:6px;">
+            🔴 ${cfg.label}
+          </div>
+          <div style="font-size:12px; color:#bbb; line-height:1.6;">
+            ${platformMsg}
+          </div>
+        </div>
 
-          <button id="aegis-btn-proceed" style="
-            padding:9px 18px; background:#1a1a2e;
-            border:1px solid #e67e22; border-radius:6px;
-            color:#e67e22; font-size:13px; font-weight:600; cursor:pointer;
-          ">Send Original</button>
+        <!-- Findings -->
+        <div style="padding:16px 22px 4px;">
+          <div style="font-size:10px; font-weight:700; color:#555; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">
+            What's at risk
+          </div>
+          ${findingsHTML}
+        </div>
 
+        <!-- Buttons -->
+        <div style="padding:14px 22px 20px;">
+
+          <!-- Redact — primary, full width -->
           <button id="aegis-btn-redact" style="
-            padding:9px 18px; background:#e94560;
-            border:1px solid #e94560; border-radius:6px;
-            color:#fff; font-size:13px; font-weight:600; cursor:pointer;
-          ">✓ Redact Secrets</button>
+            width:100%; padding:12px;
+            background:#e94560; border:none; border-radius:8px;
+            color:#fff; font-size:14px; font-weight:700;
+            cursor:pointer; margin-bottom:10px; letter-spacing:0.3px;
+          ">✓ Redact Secrets — Recommended</button>
+
+          <!-- Secondary row -->
+          <div style="display:flex; gap:8px;">
+            <button id="aegis-btn-cancel" style="
+              flex:1; padding:9px;
+              background:transparent; border:1px solid #2a2a3d;
+              border-radius:6px; color:#666; font-size:13px;
+              font-weight:600; cursor:pointer;
+            ">Cancel</button>
+
+            <button id="aegis-btn-proceed" style="
+              flex:1; padding:9px;
+              background:transparent; border:1px solid #e67e2266;
+              border-radius:6px; color:#e67e22; font-size:13px;
+              font-weight:600; cursor:pointer;
+            ">Send Original</button>
+          </div>
+
+          <div id="aegis-confirm-hint" style="
+            display:none; text-align:center;
+            font-size:11px; color:#e67e22; margin-top:8px;
+          ">⚠️ Click "Send Original" again to confirm sending your secrets</div>
         </div>
 
       </div>
@@ -178,12 +189,12 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
 
     <style>
       @keyframes aegisFadeIn {
-        from { opacity:0; transform:scale(0.95) translateY(-10px); }
-        to   { opacity:1; transform:scale(1)    translateY(0);     }
+        from { opacity:0; transform:scale(0.96) translateY(-8px); }
+        to   { opacity:1; transform:scale(1)    translateY(0);    }
       }
-      #aegis-btn-cancel:hover  { border-color:#888 !important; color:#ccc !important; }
+      #aegis-btn-redact:hover  { background:#c0392b !important; }
+      #aegis-btn-cancel:hover  { border-color:#555 !important; color:#aaa !important; }
       #aegis-btn-proceed:hover { background:#2c1a0a !important; }
-      #aegis-btn-redact:hover  { background:#c0392b !important; border-color:#c0392b !important; }
     </style>
   `;
 
@@ -192,23 +203,18 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
   document.body.appendChild(wrapper);
 
 
-  // ── HELPERS ──────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────
 
   function closeModal() {
     const overlay = document.getElementById("aegis-modal-overlay");
     if (overlay && overlay.parentNode) overlay.parentNode.remove();
   }
 
-  // Writes text into the input element.
-  // isPaste = true  → inserting pasted text (was blocked, now approved)
-  // isPaste = false → replacing entire box content (Enter-key redact case)
   function writeToInput(text) {
     if (inputEl.tagName === "TEXTAREA") {
       inputEl.value = text;
       inputEl.dispatchEvent(new Event("input", { bubbles: true }));
     } else {
-      // contenteditable: focus first so execCommand lands in the right place,
-      // then select-all so the insert replaces whatever is in the box.
       inputEl.focus();
       const range = document.createRange();
       range.selectNodeContents(inputEl);
@@ -219,27 +225,8 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
     }
   }
 
-  // ── BUTTON: Cancel ────────────────────────────────────────────
-  // Close modal. Input stays empty (paste was blocked, nothing inserted).
-  document.getElementById("aegis-btn-cancel")
-    .addEventListener("click", () => {
-      closeModal();
-    });
 
-
-  // ── BUTTON: Send Original ─────────────────────────────────────
-  // Inserts the original unredacted text into the box and closes
-  // the modal. User sees the text and decides when to send.
-  document.getElementById("aegis-btn-proceed")
-    .addEventListener("click", () => {
-      if (originalText) writeToInput(originalText);
-      // Enter-key case: text already in box, just close.
-      closeModal();
-      inputEl.focus();
-    });
-
-
-  // ── BUTTON: Redact Secrets ────────────────────────────────────
+  // ── Button: Redact Secrets (primary) ─────────────────────────
   document.getElementById("aegis-btn-redact")
     .addEventListener("click", () => {
       writeToInput(redactedText);
@@ -248,7 +235,45 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
     });
 
 
-  // ── CLOSE ON OVERLAY CLICK ────────────────────────────────────
+  // ── Button: Cancel ────────────────────────────────────────────
+  document.getElementById("aegis-btn-cancel")
+    .addEventListener("click", () => closeModal());
+
+
+  // ── Button: Send Original (double-confirm) ────────────────────
+  let sendConfirmPending = false;
+  let sendConfirmTimer   = null;
+
+  document.getElementById("aegis-btn-proceed")
+    .addEventListener("click", () => {
+      if (!sendConfirmPending) {
+        // First click — ask for confirmation
+        sendConfirmPending = true;
+        const btn = document.getElementById("aegis-btn-proceed");
+        const hint = document.getElementById("aegis-confirm-hint");
+        btn.textContent  = "⚠️ Confirm Send";
+        btn.style.background     = "#2c1a0a";
+        btn.style.borderColor    = "#e67e22";
+        hint.style.display = "block";
+
+        sendConfirmTimer = setTimeout(() => {
+          // Reset if user doesn't confirm within 4 seconds
+          sendConfirmPending   = false;
+          btn.textContent      = "Send Original";
+          btn.style.background = "transparent";
+          hint.style.display   = "none";
+        }, 4000);
+      } else {
+        // Second click — proceed
+        clearTimeout(sendConfirmTimer);
+        if (originalText) writeToInput(originalText);
+        closeModal();
+        inputEl.focus();
+      }
+    });
+
+
+  // ── Close on overlay click ────────────────────────────────────
   document.getElementById("aegis-modal-overlay")
     .addEventListener("click", (e) => {
       if (e.target.id === "aegis-modal-overlay") closeModal();
