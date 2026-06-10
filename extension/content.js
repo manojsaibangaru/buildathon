@@ -107,7 +107,7 @@ function runPipeline(text, inputEl, originalText = null) {
 
 function sendEventToBackend(event) {
   chrome.storage.local.get(["backendUrl", "orgApiKey"], (data) => {
-    const url    = data.backendUrl  || "https://aegis-ai.vercel.app";
+    const url    = data.backendUrl  || "YOUR_VERCEL_URL_HERE";
     const apiKey = data.orgApiKey   || "demo";
 
     fetch(`${url}/api/events`, {
