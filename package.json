@@ -1,0 +1,16 @@
+{
+  "name": "aegis-ai",
+  "version": "1.0.0",
+  "description": "Aegis AI — Human Exposure Protection Platform",
+  "private": true,
+  "workspaces": [
+    "aegis-core",
+    "backend"
+  ],
+  "scripts": {
+    "build:core":    "cd aegis-core && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "build":         "npm run build:core && cp aegis-core/dist/aegis-core.browser.js extension/aegis-core.js && npm run build:backend",
+    "dev:backend":   "cd backend && npm run dev"
+  }
+}

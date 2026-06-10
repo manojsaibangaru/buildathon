@@ -26,12 +26,13 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
     LOW:      "#2ecc71",
   };
 
-  // What could actually happen for each secret type — plain English, urgent
-  const RISK_DESCRIPTIONS = {
+  // Risk explanations come directly from AegisCore findings (f.riskExplanation).
+  // This fallback is used only if a finding type predates aegis-core.
+  const RISK_DESCRIPTIONS_FALLBACK = {
     AWS_ACCESS_KEY:       "Full AWS account access. Attackers scan AI logs. Average time to exploit: 4 minutes.",
     AWS_SECRET_KEY:       "Complete cloud takeover — spin up servers, drain S3 buckets, run up thousands in charges.",
     PASSWORD:             "Account takeover on every service where this password is reused.",
-    API_KEY:              "Your credits get stolen and every conversation you've had becomes readable to the attacker.",
+    API_KEY_GENERIC:      "Unauthorized access to the associated service — data exfiltration and impersonation possible.",
     JWT:                  "Session hijack — attacker logs in as you instantly, no password needed.",
     DB_CONNECTION_STRING: "Direct read, write, and delete access to your entire database. All data exposed.",
   };
@@ -62,9 +63,9 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
 
   // ── Build finding rows ────────────────────────────────────────
   const findingsHTML = uniqueFindings.map((f) => {
-    const riskDesc = RISK_DESCRIPTIONS[f.type] || "Sensitive data that should not leave your machine.";
+    const riskDesc = f.riskExplanation || RISK_DESCRIPTIONS_FALLBACK[f.type] || "Sensitive data that should not leave your machine.";
     const countLabel = f.count > 1 ? ` <span style="color:#888;font-size:10px;">(×${f.count})</span>` : "";
-    const displayName = f.type.replace(/_/g, " ");
+    const displayName = f.description || f.type.replace(/_/g, " ");
     return `
       <div style="
         padding:10px 14px; background:#12121f;
@@ -77,11 +78,14 @@ function showWarningModal(findings, exposure, redactedText, inputEl, originalTex
             font-size:12px; font-weight:700; color:#e0e0e0;
             font-family:monospace; letter-spacing:0.3px;
           ">${displayName}${countLabel}</span>
-          <span style="
-            font-size:10px; font-weight:700; color:${severityColors[f.severity] || "#888"};
-            background:${severityColors[f.severity]}18;
-            padding:2px 8px; border-radius:3px;
-          ">${f.severity}</span>
+          <div style="display:flex;gap:4px;align-items:center;">
+            ${f.category ? `<span style="font-size:9px;font-weight:600;color:#666;background:#1a1a2e;padding:2px 6px;border-radius:3px;letter-spacing:0.3px;">${f.category}</span>` : ""}
+            <span style="
+              font-size:10px; font-weight:700; color:${severityColors[f.severity] || "#888"};
+              background:${severityColors[f.severity]}18;
+              padding:2px 8px; border-radius:3px;
+            ">${f.severity}</span>
+          </div>
         </div>
         <div style="font-size:11px; color:#aaa; line-height:1.5;">
           ${riskDesc}

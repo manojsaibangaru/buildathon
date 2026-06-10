@@ -1,0 +1,15 @@
+{
+  "name": "@aegis-ai/core",
+  "version": "1.0.0",
+  "description": "Shared detection engine for Aegis AI — detects secrets, PII, PHI before they reach AI tools.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && node scripts/bundle-browser.js",
+    "build:watch": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "esbuild": "^0.21.5"
+  }
+}
